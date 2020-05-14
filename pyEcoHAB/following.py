@@ -349,6 +349,10 @@ def get_dynamic_interactions(ehd, cf, N, binsize=12*3600, res_dir="", prefix="",
     other_excess_hist = os.path.join('other_variables',
                                      'dynamic_interactions_excess_histograms',
                                      "bins_%s" % binsize_name)
+    other_raster_dir =  os.path.join('other_variables',
+                                     'durations_dynamic_interaction',
+                                     'raster_plots',
+                                     "bins_%s" % binsize_name)
 
     for idx_phase, ph in enumerate(all_phases):
         new_phase = phases[idx_phase]
