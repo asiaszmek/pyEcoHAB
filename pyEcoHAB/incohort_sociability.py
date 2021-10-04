@@ -5,7 +5,9 @@ from collections import OrderedDict
 import numpy as np
 from . import utility_functions as utils
 from .plotting_functions import single_in_cohort_soc_plot, make_RasterPlot
-from .write_to_file import write_binned_data, write_csv_rasters, write_csv_alone
+from .write_to_file import write_binned_data, write_csv_rasters, write_sum_data, write_two_values
+from .write_to_file import write_csv_alone
+
 
 def prepare_mice_intervals(data_mice, address):
     ints = {}
@@ -16,10 +18,11 @@ def prepare_mice_intervals(data_mice, address):
 
 def check_interval(intervals_mouse1, intervals_mouse2, idx, new_idx):
     original_s, original_e = intervals_mouse1[0][idx], intervals_mouse1[1][idx]
-    other_s, other_e = intervals_mouse2[0][new_idx], intervals_mouse2[1][new_idx]
-    if  other_s > original_e:
+    other_s = intervals_mouse2[0][new_idx]
+    other_e = intervals_mouse2[1][new_idx]
+    if other_s > original_e:
         return False
-    if original_s >  other_s and original_e > other_e:
+    if original_s > other_s and original_e > other_e:
         intervals_mouse1[0][idx] = other_e
         return False
     if original_s < other_s and original_e < other_e:
@@ -41,6 +44,7 @@ def check_interval(intervals_mouse1, intervals_mouse2, idx, new_idx):
         return True
     return False
 
+
 def remove_overlapping_intervals(intervals_mouse1, intervals_mouse2):
     """"
     Eliminate all the intervals, when mouse 1 is with mouse 2
@@ -51,17 +55,20 @@ def remove_overlapping_intervals(intervals_mouse1, intervals_mouse2):
         return
     i = 0
     while i < len(intervals_mouse1[0]):
-        new_idx = utils.get_idx_pre(intervals_mouse1[0][i], intervals_mouse2[0])
+        new_idx = utils.get_idx_pre(intervals_mouse1[0][i],
+                                    intervals_mouse2[0])
         if new_idx is None:
-            new_idx = utils.get_idx_pre(intervals_mouse1[1][i], intervals_mouse2[0])
+            new_idx = utils.get_idx_pre(intervals_mouse1[1][i],
+                                        intervals_mouse2[0])
             if new_idx is None:
                 i = i + 1
                 continue
         if intervals_mouse2[1][new_idx] < intervals_mouse1[0][i]:
             new_idx += 1
-        if new_idx  >= len(intervals_mouse2[0]):
+        if new_idx >= len(intervals_mouse2[0]):
             break
-        removed = check_interval(intervals_mouse1, intervals_mouse2, i, new_idx)
+        removed = check_interval(intervals_mouse1, intervals_mouse2, i,
+                                 new_idx)
         if not removed:
             i = i + 1
 
@@ -79,8 +86,10 @@ def mouse_alone(data_mice, address):
                 remove_overlapping_intervals(mouse_ints, ints[other_mouse])
         new_intervals[mouse] = mouse_ints
     for mouse in new_intervals:
-        result[mouse] = utils.get_duration(new_intervals[mouse][0], new_intervals[mouse][1])
+        result[mouse] = utils.get_duration(new_intervals[mouse][0],
+                                           new_intervals[mouse][1])
     return result
+
 
 def make_solitude_output(addresses, mice):
     output = OrderedDict()
@@ -90,22 +99,23 @@ def make_solitude_output(addresses, mice):
             output[address][mouse] = OrderedDict()
     return output
 
-def get_solitude(ehs, cf, res_dir="", prefix="", delimiter=";"):
-    if prefix is "":
-        prefix = ehs.prefix
-    if res_dir is "":
-        res_dir = ehs.res_dir
-    phases = utils.filter_dark_light(cf.sections())
-    output = make_solitude_output(ehs.cages, ehs.mice)
 
+def get_solitude(ecohab_data, timeline, res_dir="", prefix="", delimiter=";"):
+    if prefix == "":
+        prefix = ecohab_data.prefix
+    if res_dir == "":
+        res_dir = ecohab_data.res_dir
+    phases = utils.filter_dark_light(timeline.sections())
+    output = make_solitude_output(ecohab_data.cages, ecohab_data.mice)
     for phase in phases:
-        times = cf.gettime(phase)
-        data = utils.prepare_data(ehs, ehs.mice, times)
-        for address in ehs.cages:
+        times = timeline.get_time_from_epoch(phase)
+        data = utils.prepare_data(ecohab_data, ecohab_data.mice, times)
+        for address in ecohab_data.cages:
             alone = mouse_alone(data, address)
-            for mouse in ehs.mice:
+            for mouse in ecohab_data.mice:
                 output[address][mouse][phase] = alone[mouse]
     write_csv_alone(output, phases, res_dir, prefix, delimiter=delimiter)
+    return output
 
 
 def mice_overlap(ints1, ints2):
@@ -128,8 +138,8 @@ def expected_time_fraction_together_one_cage(ints1, ints2, total_time):
     return durations_m1/total_time*durations_m2/total_time
 
 
-def mice_together(data_mice, m1, m2, addresses, total_time):
-    """Return the time spent together by two mice and expected time 
+def mice_together(data_mice, m1, m2, addresses, tot_t):
+    """Return the time spent together by two mice and expected time
     assuming independence."""
     time_together = 0
     exp_time_together = 0
@@ -138,12 +148,11 @@ def mice_together(data_mice, m1, m2, addresses, total_time):
         ints2 = utils.get_intervals(data_mice[m2], address)
         time_together += time_fraction_together_one_cage(ints1,
                                                          ints2,
-                                                         total_time)
+                                                         tot_t)
         exp_time_together += expected_time_fraction_together_one_cage(ints1,
                                                                       ints2,
-                                                                      total_time)
+                                                                      tot_t)
     return time_together, exp_time_together
-
 
 
 def single_phase_results(data, mice, addresses, total_time):
@@ -160,9 +169,7 @@ def single_phase_results(data, mice, addresses, total_time):
     return res, res_exp
 
 
-
-
-def get_incohort_sociability(ehs, cf, binsize, res_dir="",
+def get_incohort_sociability(ecohab_data, timeline, binsize, res_dir="",
                              prefix="", remove_mouse="", delimiter=";"):
 
     """
@@ -185,11 +192,11 @@ def get_incohort_sociability(ehs, cf, binsize, res_dir="",
 
 
     Args:
-        ehs : Loader or Loader_like
+        ecohab_data : Loader or Loader_like
            Eco-HAB dataset.
-        cf : ExperimentConfigFile
+        timeline : Timeline
            timeline of the experiment.
-        binsize : string or number 
+        binsize : string or number
            time bins for calculating activity. Possible string values are:
            "ALL" -- calculate activity for the whole experiment,
            "dark" -- calculate activity for all dark phases,
@@ -198,32 +205,33 @@ def get_incohort_sociability(ehs, cf, binsize, res_dir="",
            equal 3600 results in 1 h bins.
         res_dir : string
            destination directory
-           default value is the destination directory established for ehs.
+           default value is the destination directory established
+           for ecohab_data.
         prefix : string
            string added to the name of every generated results file
-           default value is the prefix established for ehs
+           default value is the prefix established for ecohab_data
         remove_mouse : string or list
            name of mouse or mice to be removed from the results file
            As a default activity will be established for every mouse registered
-           in ehs.
+           in ecohab_data.
         delimiter : str, optional
            String or character separating columns.
     """
     if prefix == "":
-        prefix = ehs.prefix
+        prefix = ecohab_data.prefix
     if res_dir == "":
-        res_dir = ehs.res_dir
-    mice = utils.get_mice(ehs.mice, remove_mouse)
+        res_dir = ecohab_data.res_dir
+    mice = utils.get_mice(ecohab_data.mice, remove_mouse)
     add_info_mice = utils.add_info_mice_filename(remove_mouse)
-
-   
     meas_prefix = "incohort_sociability_measured_time_%s_%s" % (prefix,
                                                                 add_info_mice)
     exp_prefix = "incohort_sociability_expected_time_%s_%s" % (prefix,
                                                                add_info_mice)
     excess_prefix = "incohort_sociability_excess_time_%s_%s" % (prefix,
                                                                 add_info_mice)
-    phases, time, data, keys = utils.prepare_binned_data(ehs, cf, binsize, mice)
+    phases, time, data, keys = utils.prepare_binned_data(ecohab_data,
+                                                         timeline, binsize,
+                                                         mice)
 
     if isinstance(binsize, int) or isinstance(binsize, float):
         binsize_name = "%3.2f_h" % (binsize/3600)
@@ -239,46 +247,65 @@ def get_incohort_sociability(ehs, cf, binsize, res_dir="",
     full_results = utils.make_all_results_dict(*keys)
     full_results_exp = utils.make_all_results_dict(*keys)
     out_dir_hist = os.path.join("incohort_sociability", "histograms",
-                                 "bins_%s" % binsize_name)
+                                "bins_%s" % binsize_name)
     out_dir_rasters = os.path.join("incohort_sociability",
-                                    "raster_plots",
-                                    "bins_%s" % binsize_name)
+                                   "raster_plots",
+                                   "bins_%s" % binsize_name)
     out_dir_hist_add = os.path.join("incohort_sociability",
-                                     "additionals", "histograms",
-                                 "bins_%s" % binsize_name)
+                                    "additionals", "histograms",
+                                    "bins_%s" % binsize_name)
     out_dir_rasters_add = os.path.join("incohort_sociability",
-                                        "additionals", "raster_plots",
-                                        "bins_%s" % binsize_name)
+                                       "additionals", "raster_plots",
+                                       "bins_%s" % binsize_name)
     all_phases, bin_labels = keys
+    cages = ecohab_data.cages
+
+    excess_time_per_mouse = OrderedDict()
+    mean_excess_time_per_mouse = OrderedDict()
+    standard_error_per_mouse = OrderedDict()
+
     for idx_phase, ph in enumerate(all_phases):
         new_phase = phases[idx_phase]
         for lab in bin_labels:
             full_results[ph][lab],\
                 full_results_exp[ph][lab] = single_phase_results(data[ph][lab],
-                                                                 mice,
-                                                                 ehs.cages,
+                                                                 mice, cages,
                                                                  time[ph][lab])
 
         write_binned_data(full_results[ph],
                           'incohort_sociability_measured_time',
-                          mice, bin_labels, new_phase, res_dir, 
+                          mice, bin_labels, new_phase, res_dir,
                           out_dir_hist_add,
                           prefix, additional_info=add_info_mice,
                           delimiter=delimiter)
         write_binned_data(full_results_exp[ph],
                           'incohort_sociability_expected_time',
-                          mice, bin_labels, new_phase, res_dir, 
+                          mice, bin_labels, new_phase, res_dir,
                           out_dir_hist_add,
                           prefix, additional_info=add_info_mice,
                           delimiter=delimiter)
         excess_time = utils.calc_excess(full_results[ph],
                                         full_results_exp[ph])
 
+        reflected_excess_time = utils.diagonal_reflection(excess_time, mice, bin_labels)
+        excess_time_per_mouse[ph] = utils.sum_per_mouse(reflected_excess_time,
+                                                        mice, bin_labels, ph,
+                                                        "sum_per_mouse", False, True)
+
         write_binned_data(excess_time,
                           'incohort_sociability_excess_time',
-                          mice, bin_labels, new_phase, res_dir, 
+                          mice, bin_labels, new_phase, res_dir,
                           out_dir_hist, prefix, additional_info=add_info_mice,
                           delimiter=delimiter)
+
+        mean_excess_time_per_mouse[ph] = utils.mean(excess_time_per_mouse[ph],
+                                                    len(mice)-1,
+                                                    mice, bin_labels)
+        standard_error_per_mouse[ph] = utils.standard_error(reflected_excess_time,
+                                                            mean_excess_time_per_mouse[ph],
+                                                            mice, bin_labels)
+
+
         if isinstance(binsize, int) or isinstance(binsize, float):
             if int(binsize) == 12*3600 or int(binsize) == 24*3600:
                 fname = "incohort_sociability_"
@@ -327,63 +354,81 @@ def get_incohort_sociability(ehs, cf, binsize, res_dir="",
                           res_dir,
                           out_dir_rasters,
                           fname_excess, delimiter=delimiter)
-      
     if isinstance(binsize, int) or isinstance(binsize, float):
         if binsize == 43200:
+            out_name = "incohort_sociability_%s_time_ALL_phases_binned.%s"
             write_csv_rasters(mice,
                               all_phases,
                               csv_results_incohort,
                               res_dir,
                               out_dir_rasters_add,
-                              "incohort_sociability_measured_time_ALL_phases_binned.csv",
-                              delimiter=delimiter)
+                              out_name % ("measured", "csv"),
+                              delimiter=delimiter, prefix=prefix)
             write_csv_rasters(mice,
                               all_phases,
                               csv_results_incohort_exp,
                               res_dir,
                               out_dir_rasters_add,
-                              "incohort_sociability_expected_time_ALL_phases_binned.csv",
-                              delimiter=delimiter)
+                              out_name % ("expected", "csv"),
+                              delimiter=delimiter, prefix=prefix)
             write_csv_rasters(mice,
                               all_phases,
                               csv_results_incohort - csv_results_incohort_exp,
                               res_dir,
                               out_dir_rasters,
-                               "incohort_sociability_excess_time_ALL_phases_binned.csv",
-                              delimiter=delimiter)
+                              out_name % ("excess", "csv"),
+                              delimiter=delimiter, prefix=prefix)
             make_RasterPlot(res_dir,
                             out_dir_rasters_add,
                             csv_results_incohort,
                             all_phases,
-                            "incohort_sociability_measured_time_ALL_phases_binned",
+                            out_name % ("measured", "png"),
                             mice,
                             prefix=prefix,
                             to_file=True,
                             vmin=-1,
                             vmax=1,
                             title="Measured in-cohort sociability",
-                            symmetric=True)
+                            symmetrical=True)
             make_RasterPlot(res_dir,
                             out_dir_rasters_add,
                             csv_results_incohort_exp,
                             all_phases,
-                            "incohort_sociability_expected_time_ALL_phases_binned",
+                            out_name % ("expected", "png"),
                             mice,
                             prefix=prefix,
                             to_file=True,
                             vmin=-1,
                             vmax=1,
                             title="Expected in-cohort sociability",
-                            symmetric=True)
+                            symmetrical=True)
             make_RasterPlot(res_dir,
                             out_dir_rasters,
                             csv_results_incohort-csv_results_incohort_exp,
                             all_phases,
-                            "incohort_sociability_excess_time_ALL_phases_binned",
+                            out_name % ("excess", "png"),
                             mice,
                             prefix=prefix,
                             to_file=True,
                             vmin=-1,
                             vmax=1,
                             title="Excess in-cohort sociability",
-                            symmetric=True)
+                            symmetrical=True)
+
+        write_sum_data(excess_time_per_mouse,
+                           'excess_incohort_sociability_per_mouse',
+                           mice, bin_labels, all_phases,
+                           res_dir, out_dir_hist, prefix,
+                           additional_info=add_info_mice,
+                           delimiter=delimiter, bool_bins=True)
+
+        write_two_values(mean_excess_time_per_mouse,
+                         standard_error_per_mouse,
+                         ['mean', 'standard error'],
+                         'mean_and_standard_error_per_mouse',
+                         mice, bin_labels, all_phases,
+                         res_dir, out_dir_hist, prefix,
+                         additional_info=add_info_mice,
+                         delimiter=delimiter)
+
+    return full_results, full_results_exp
