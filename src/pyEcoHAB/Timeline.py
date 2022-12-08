@@ -1,14 +1,9 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
-# -*- encoding: utf-8 -*-
-from __future__ import division, absolute_import, print_function
-"""
-Timeline.py
-
-Created by Szymon Łęski on 2013-02-19.
-
-"""
+#!/usr/bin/env python
+#-*- coding: utf-8 -*-
 import os
-from configparser import RawConfigParser, NoSectionError
+from configparser import ConfigParser, NoSectionError
+import glob
 import sys
 import time
 import calendar
@@ -20,15 +15,21 @@ if os.environ.get('DISPLAY', '') == '':
 import matplotlib.ticker
 import matplotlib.dates as mpd
 import matplotlib.pyplot as plt
-from pyEcoHAB import utility_functions as uf
-from pyEcoHAB.utils import for_loading as fl
+
+from .utils import general as uf
+from .utils import for_loading as fl
+from .utils import temporal as temp
 
 
+"""
+Timeline.py
+
+Created by Szymon Łęski on 2013-02-19.
+
+"""
 
 
-
-
-class Timeline(RawConfigParser, matplotlib.ticker.Formatter):
+class Timeline(ConfigParser, matplotlib.ticker.Formatter):
     """Read in the temporal config of the experiment
      (timeline of the experiment).
 
@@ -49,8 +50,11 @@ class Timeline(RawConfigParser, matplotlib.ticker.Formatter):
     experiment are in UTC.
 
     """
-    def __init__(self, path, fname=None):
-        RawConfigParser.__init__(self)
+    def __init__(self, path, fname=None, dark_beginning="12:00",
+                 first_phase="dark", dark_length=12, light_length=12,
+                 phase_name="EMPTY"):
+        dark_beg = dark_beginning
+        ConfigParser.__init__(self)
         self.path = path
         if fname is None:
             if os.path.isfile(path):
@@ -59,9 +63,23 @@ class Timeline(RawConfigParser, matplotlib.ticker.Formatter):
                 fname = 'config.txt'
                 self.path = os.path.join(path, fname)
             else:
-                fname = filter(lambda x: x.startswith('config') and
-                               x.endswith('.txt'),
-                               os.listdir(path))[0]
+                try:
+                    fnames = filter(lambda x: x.startswith('config')
+                                    and x.endswith('.txt'),
+                                    os.listdir(path))[0]
+                except TypeError:
+                    fname = "config.txt"
+                    config_dict = temp.gen_timeline(path,
+                                                    dark_beginning=dark_beg,
+                                                    first_phase=first_phase,
+                                                    dark_length=dark_length,
+                                                    light_length=light_length,
+                                                    phase_name=phase_name)
+                    config = ConfigParser()
+                    config.read_dict(config_dict)
+                    new_path = os.path.join(path, fname)
+                    with open(new_path, 'w') as configfile:
+                        config.write(configfile)
                 self.path = os.path.join(path, fname)
         else:
             fname = fname
